@@ -1,0 +1,13 @@
+#-----------------------------------------------------------
+# Vivado v2021.2 (64-bit)
+# SW Build 3367213 on Tue Oct 19 02:47:39 MDT 2021
+# IP Build 3369179 on Thu Oct 21 08:25:16 MDT 2021
+# Start of session at: Tue Feb 20 15:05:23 2024
+# Process ID: 67264
+# Current directory: /thayerfs/home/f004hf2/workspace/module6/module6.runs/module6_hw_xbar_0_synth_1
+# Command line: vivado -log module6_hw_xbar_0.vds -product Vivado -mode batch -messageDb vivado.pb -notrace -source module6_hw_xbar_0.tcl
+# Log file: /thayerfs/home/f004hf2/workspace/module6/module6.runs/module6_hw_xbar_0_synth_1/module6_hw_xbar_0.vds
+# Journal file: /thayerfs/home/f004hf2/workspace/module6/module6.runs/module6_hw_xbar_0_synth_1/vivado.jou
+# Running On: m210-linux-12.thayer.dartmouth.edu, OS: Linux, CPU Frequency: 4599.999 MHz, CPU Physical cores: 8, Host memory: 33490 MB
+#-----------------------------------------------------------
+source module6_hw_xbar_0.tcl -notrace

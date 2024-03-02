@@ -1,0 +1,29 @@
+11:02:24 **** Incremental Build of configuration Debug for project m6_sw ****
+make all 
+make --no-print-directory pre-build
+a9-linaro-pre-build-step
+ 
+make --no-print-directory main-build
+Building file: ../src/m6.c
+Invoking: ARM v7 gcc compiler
+arm-none-eabi-gcc -Wall -O0 -g3 -c -fmessage-length=0 -MT"src/m6.o" -mcpu=cortex-a9 -mfpu=vfpv3 -mfloat-abi=hard -I/thayerfs/home/f004hf2/workspace/module6_hw_wrapper/export/module6_hw_wrapper/sw/module6_hw_wrapper/standalone_ps7_cortexa9_0/bspinclude/include -MMD -MP -MF"src/m6.d" -MT"src/m6.o" -o "src/m6.o" "../src/m6.c"
+../src/m6.c: In function 'handler0':
+../src/m6.c:288:6: warning: variable 'num' set but not used [-Wunused-but-set-variable]
+  288 |  u32 num;
+      |      ^~~
+Finished building: ../src/m6.c
+ 
+Building target: m6_sw.elf
+Invoking: ARM v7 gcc linker
+arm-none-eabi-gcc -mcpu=cortex-a9 -mfpu=vfpv3 -mfloat-abi=hard -Wl,-build-id=none -specs=Xilinx.spec -Wl,-T -Wl,../src/lscript.ld -L/thayerfs/home/f004hf2/workspace/module6_hw_wrapper/export/module6_hw_wrapper/sw/module6_hw_wrapper/standalone_ps7_cortexa9_0/bsplib/lib -o "m6_sw.elf" ./src/adc.o ./src/gic.o ./src/io.o ./src/led.o ./src/m6.o ./src/platform.o ./src/servo.o ./src/ttc.o   -Wl,--start-group,-lxil,-lgcc,-lc,--end-group
+Finished building target: m6_sw.elf
+ 
+Invoking: ARM v7 Print Size
+arm-none-eabi-size m6_sw.elf  |tee "m6_sw.elf.size"
+   text	   data	    bss	    dec	    hex	filename
+  65510	   3120	  23088	  91718	  16646	m6_sw.elf
+Finished building: m6_sw.elf.size
+ 
+
+11:02:25 Build Finished (took 1s.630ms)
+

@@ -1,0 +1,583 @@
+/*
+ * Josh Meise, ENGS 62, Module 1 Step 8
+ *
+ * This uses modified code provided by Professor Taylor.
+ *
+ * blinky.c -- toggles LED when 0 is enteRED + 5 by user.
+ *
+ * Assumes the LED's are connected to AXI_GPIO_0, on channel 1
+ *
+ * Terminal Settings:
+ *  -Baud: 115200
+ *  -Data bits: 8
+ *  -Parity: no
+ *  -Stop bits: 1
+ */
+
+// Library inclusions.
+#include <stdio.h>
+#include "xil_types.h"
+#include "platform.h"
+#include <xgpio.h>
+#include "xparameters.h"
+#include <string.h>
+#include <stdlib.h>
+#include "led.h"
+#include "io.h"
+#include "servo.h"
+#include "gic.h"
+#include "adc.h"
+#include "ttc.h"
+#include <unistd.h>
+#include <stdbool.h>
+
+#define SERVO_MIN 2.5
+#define SERVO_MAX 11
+#define PING 1
+#define UPDATE 2
+#define ID 17
+
+typedef enum {
+	MAINTENANCE, TRAIN, PEDESTRIAN, TRAFFIC, TRANSITION
+} state_t;
+
+// Structure definition for update message.
+typedef struct {
+	int type;
+	int id;
+	int value;
+} update_t;
+
+// Structure definition for update response.
+typedef struct {
+	int type;
+	int id;
+	int average;
+	int values[30];
+} update_response_t;
+
+// Global ariables.
+static state_t state;
+static s32 ctr;
+static s32 tlCtr;
+static bool on;
+static bool done;
+static float prevVal;
+static update_response_t updateResponse;
+static XUartPs UART0;
+
+/*
+ * Handles interrupts by invoking built-in interrupt handler.
+ * Inputs: Pointer to UART instance.
+ * Outputs: None.
+ */
+void interruptHandler(void *devP) {
+	// Variable declarations and coercion.
+	XUartPs *dev = (XUartPs *)devP;
+
+	XUartPs_InterruptHandler(dev);
+
+}
+
+/*
+ * This function handles button pushes appropriately.
+ * Inputs: button that was pushed.
+ * Outputs: none.
+ */
+void btn_callback(u32 btn) {
+	// Switch modes based on which button is pressed.
+	if (btn == 0 && state == TRAFFIC) {
+		state = PEDESTRIAN;
+		tlCtr = 0;
+	} else if (btn == 1 && state == TRAFFIC) {
+		state = PEDESTRIAN;
+		tlCtr = 0;
+	} else if (btn == 3) {
+		done = true;
+	}
+
+}
+
+/*
+ * This function handles button pushes appropriately.
+ * Inputs: button that was pushed.
+ * Outputs: none.
+ */
+void swt_callback(u32 swt) {
+	// Switch modes based on which button is pressed.
+	if (swt == 0 && state != MAINTENANCE) {
+		printf("Entering maintenance mode.\n");
+		state = MAINTENANCE;
+		tlCtr = 0;
+	}
+	else if (swt == 0 && state == MAINTENANCE) {
+		printf("Exiting maintenance mode.\n");
+		state = TRANSITION;
+		tlCtr = 0;
+	}
+	else if (swt == 1 && state != TRAIN) {
+		printf("Train arriving.\n");
+		state = TRAIN;
+		tlCtr = 0;
+	}
+	else if (swt == 1 && state == TRAIN) {
+		printf("Train passed.\n");
+		state = TRANSITION;
+		tlCtr = 0;
+	}
+
+	ctr = 0;
+
+}
+
+/*
+ * This function turns LED 4 on and off when we receive an interrupt on the timer.
+ * Inputs: none.
+ * Outputs: None.
+ */
+void timer_callback(void) {
+	// Variable declarations.
+	float val;
+	update_t updateStruct;
+
+	// Flash LED for maintenance mode.
+	if (state == MAINTENANCE && ctr == 10) {
+		if (tlCtr == 0) {
+			led_set(GREEN + 5, LED_OFF);
+			led_set(YELLOW + 5, LED_ON);
+		}
+		else if (tlCtr == 3) {
+			led_set(YELLOW + 5, LED_OFF);
+			led_set(RED + 5, LED_ON);
+			led_set(0, LED_ON);
+			led_set(1, LED_ON);
+			led_set(2, LED_ON);
+			led_set(3, LED_ON);
+			servo_set(SERVO_MAX);
+			printf("Gate closed.\n");
+			prevVal = adc_get_pot();
+		}
+
+		if (tlCtr >= 6) {
+			// Change LED to opposite state.
+			if (on == false) {
+				led_set(BLUE + 5, LED_ON);
+				on = true;
+			}
+			else if (on == true) {
+				led_set(BLUE + 5, LED_OFF);
+				on = false;
+			}
+
+			// Get the potentiometer value.
+			val = adc_get_pot();
+
+			if ((int)(val*10) != (int)(prevVal*10)) {
+				// Send servo to position of the potentiometer.
+				servo_set(SERVO_MIN + (SERVO_MAX - SERVO_MIN)*val);
+
+				prevVal = val;
+			}
+		}
+		// Reset timer counter.
+		ctr = 0;
+		tlCtr++;
+	}
+	// Use for turning on LEDs for traffic light.
+	else if (state == PEDESTRIAN) {
+		// Traffic has been flowing for more than 3 minutes.
+		if (ctr > 100) {
+			if (tlCtr == 0) {
+				led_set(GREEN + 5, LED_OFF);
+				led_set(YELLOW + 5, LED_ON);
+			}
+			else if (tlCtr == 30) {
+				led_set(YELLOW + 5, LED_OFF);
+				led_set(RED + 5, LED_ON);
+				led_set(0, LED_ON);
+				led_set(1, LED_ON);
+				led_set(2, LED_ON);
+				led_set(3, LED_ON);
+			}
+			else if (tlCtr == 130) {
+				led_set(RED + 5, LED_OFF);
+				led_set(YELLOW + 5, LED_ON);
+				led_set(0, LED_OFF);
+				led_set(1, LED_OFF);
+				led_set(2, LED_OFF);
+				led_set(3, LED_OFF);
+			}
+			else if (tlCtr == 160) {
+				state = TRAFFIC;
+				led_set(YELLOW + 5, LED_OFF);
+				led_set(GREEN + 5, LED_ON);
+				ctr = 0;
+			}
+			tlCtr++;
+		}
+	}
+	// Use for turning on LEDs for traffic light.
+	else if (state == TRAIN) {
+		if (tlCtr == 0) {
+			led_set(GREEN + 5, LED_OFF);
+			led_set(YELLOW + 5, LED_ON);
+			tlCtr++;
+		}
+		else if (tlCtr == 30) {
+			led_set(YELLOW + 5, LED_OFF);
+			led_set(RED + 5, LED_ON);
+			servo_set(SERVO_MAX);
+			printf("Gate closed.\n");
+			led_set(0, LED_ON);
+			led_set(1, LED_ON);
+			led_set(2, LED_ON);
+			led_set(3, LED_ON);
+		}
+
+		tlCtr++;
+	}
+	// Transition out of train mode.
+	else if (state == TRANSITION) {
+		if (tlCtr == 0) {
+			servo_set(SERVO_MIN);
+			printf("Gate open.\n");
+			led_set(RED + 5, LED_ON);
+		}
+		else if (tlCtr == 130) {
+			led_set(RED + 5, LED_OFF);
+			led_set(YELLOW + 5, LED_ON);
+			led_set(0, LED_OFF);
+			led_set(1, LED_OFF);
+			led_set(2, LED_OFF);
+			led_set(3, LED_OFF);
+		}
+		else if (tlCtr == 160) {
+			state = TRAFFIC;
+			led_set(YELLOW + 5, LED_OFF);
+			led_set(GREEN + 5, LED_ON);
+			tlCtr = -1;
+			ctr = 0;
+		}
+
+		tlCtr++;
+	}
+
+	// Fill in the fields of the update message.
+	updateStruct.type = UPDATE;
+	updateStruct.id = 0;
+	updateStruct.value = 0;
+
+	// Send the message to UART 0;
+	XUartPs_Send(&UART0, (u8 *)&updateStruct, sizeof(update_t));
+
+	ctr++;
+
+}
+
+/*
+ * Handles interrupts on UART0.
+ * Inputs: Pointer to instance of UART0; interrupt event; data from event.
+ * Outputs: None.
+ */
+void handler0(void *CallBackRef, u32 Event, u32 EventData) {
+	// Variable declarations.
+	u8 buff, j;
+	u32 num;
+	int val;
+
+	// If the interrupt on UART0 was a receive event.
+	if (Event == XUARTPS_EVENT_RECV_DATA) {
+		// Receive the data on UART0, placing into different parts of the ping depending on what was received.
+		if (numBytes == 0)
+			num = XUartPs_Recv((XUartPs *)CallBackRef, (u8 *)(&updateResponse.type), 1);
+		else if (numBytes == 4)
+			num = XUartPs_Recv((XUartPs *)CallBackRef, (u8 *)(&updateResponse.id), 1);
+		else if (numBytes == 8)
+			num = XUartPs_Recv((XUartPs *)CallBackRef, (u8 *)(&updateResponse.average), 1);
+		else if (numBytes%4 == 0) {
+			num = XUartPs_Recv((XUartPs *)CallBackRef, (u8 *)(&updateResponse.values[i]), 1);
+			i++;
+		}
+		else
+			num = XUartPs_Recv((XUartPs *)CallBackRef, (u8 *)&buff, 1);
+
+		// Increment the number of bytes.
+		numBytes++;
+
+		// Once a full message has been received.
+		if (numBytes == sizeof(update_response_t)) {
+//			// Print messgage to screen.
+//			printf("Type: %d, ID: %d, Average: %d, Values: {", updateResponse.type, updateResponse.id, updateResponse.average);
+//
+//			for (j = 0; j < 30; j++) {
+//				printf("%d ", updateResponse.values[j]);
+//			}
+//
+//			printf("}\r\n");
+
+			val = updateResponse.values[ID];
+
+			if (val == 0) {
+				printf("Train arriving.\n");
+				state = TRAIN;
+				tlCtr = 0;
+			}
+			else if (value == 1) {
+				printf("Train passed.\n");
+				state = TRANSITION;
+				tlCtr = 0;
+			}
+			else if (value == 2) {
+				printf("Entering maintenance mode.\n");
+				state = MAINTENANCE;
+				tlCtr = 0;
+			}
+			else if (value == 2) {
+				printf("Exiting maintenance mode.\n");
+				state = TRANSITION;
+				tlCtr = 0;
+			}
+
+			// Reset counters.
+			numBytes = 0;
+			i = 0;
+		}
+	}
+
+}
+
+
+int main() {
+	// Variable declarations.
+	XUartPs_Config *conf;
+
+	// Initialize hardware platform.
+	init_platform();
+
+	// Set stdin unbuffeRED + 5, forcing getchar to return immediately when a character is typed.
+	setvbuf(stdin,NULL,_IONBF,0);
+
+	// Initializations.
+	ctr = 0;
+	tlCtr = 0;
+	on = false;
+	done = false;
+	state = TRAFFIC;
+
+	// Initialize the gic.
+	if (gic_init() != XST_SUCCESS)
+		printf("Error initializing gic.\n");
+
+	// Look up the config of the UART.
+	conf = XUartPs_LookupConfig(XPAR_PS7_UART_0_DEVICE_ID);
+
+	// Initialize the UART.
+	if (XUartPs_CfgInitialize(&UART0, conf, conf->BaseAddress) != XST_SUCCESS)
+		printf("Error initializing UART0.\n");
+
+	// Disable the UART.
+	XUartPs_DisableUart(&UART0);
+
+	// Set the baud rate.
+	if (XUartPs_SetBaudRate(&UART0, 9600) != XST_SUCCESS)
+		printf("Error setting BAUD rate.\n");
+
+	// Set the fifo threshod.
+	XUartPs_SetFifoThreshold(&UART0, 1);
+
+	// Set the interrupt handler.
+	XUartPs_SetInterruptMask(&UART0, XUARTPS_IXR_RXOVR);
+
+	// Set the handler.
+	XUartPs_SetHandler(&UART0, handler0, (void *)&UART0);
+
+	// Connect interrupt handler to gic.
+	if (gic_connect(XPAR_XUARTPS_0_INTR, interruptHandler, (void *)&UART0) != XST_SUCCESS)
+		printf("Connecting interrupt not successful.\n");
+
+	// Enable the UART.
+	XUartPs_EnableUart(&UART0);
+
+
+	// Initialize the LED module.
+	led_init();
+
+	// Initialise the servomotor module.
+	servo_init();
+
+	// Initialize the adc module.
+	adc_init();
+
+	// Initialize the ttc at frequency 10Hz.
+	ttc_init(10, timer_callback);
+
+	// Initialize interrupts on button.
+	io_btn_init(btn_callback);
+
+	// Initialize interrupts on switches.
+	io_sw_init(swt_callback);
+
+	// Start the timer.
+	ttc_start();
+
+	// Set the gate to open.
+	servo_set(SERVO_MIN);
+
+	// Start with LED green for traffic.
+	led_set(GREEN + 5, LED_ON);
+
+	printf("[hello]\n");
+
+	while (!done);
+
+	printf("[done]\n");
+
+	// Stop the timer.
+	ttc_stop();
+
+	// Close the interrupts on switches and buttons.
+	io_btn_close();
+	io_sw_close();
+
+	// Close down the timer.
+	ttc_close();
+
+	// Close the gic.
+	gic_close();
+
+	// Turn off LED 4 and all other LEDs.
+	led_set(ALL, LED_OFF);
+
+
+/*
+
+	// Initialise the servomotor module.
+	servo_init();
+
+	// Initialize the adc module.
+	adc_init();
+
+	// Initialize the ttc at frequency 1Hz.
+	ttc_init(1, timer_callback);
+
+	// Initialize interrupts on button.
+	io_btn_init(btn_callback);
+
+	// Initialize interrupts on switches.
+	io_sw_init(swt_callback);
+
+	// Start the timer.
+	ttc_start();
+
+	// Start out at 7.5% duty cycle.
+	dutyCycle = 7.5;
+
+	// Obtain input from user while not q.
+	do {
+		// Print out the command prompt.
+		printf(">");
+		
+		// Start at the beginning of the string.
+		i = 0;
+		
+		// Read in the string until the user enters a newline.
+		while ((c = getchar()) != '\r') {
+			
+			// Please character into string.
+			str[i] = c;
+			
+			// Move forward in string.
+			i++;
+		}
+		
+		// Insert null terminator.
+		str[i] = '\0';
+		
+		printf("%s\n", str);
+		
+		// Check to see if only a 0 to change LED status.
+		if ((str[0] >= '0' && str[0] <= '3') && str[1] == '\0') {
+			// Convert to a long.
+			num = strtol(str, &jnk, 10);
+			
+			// Get status of led and print.
+			if (led_get(num) == LED_ON)
+				printf("[%ld off]\n", num);
+			else if (led_get(num) == LED_OFF)
+				printf("[%ld on]\n", num);
+
+			// Toggle the LED.
+			led_toggle(num);
+
+		}
+		// Check to see if coloRED + 5 LED.
+		else if ((str[0] == 'r' || str[0] == 'g' || str[0] == 'b' || str[0] == 'y') && str[1] == '\0') {
+			// Turn on relevant color.
+			if (str[0] == 'r')
+				led_set(RED + 5 + 5, LED_ON);
+			else if (str[0] == 'y')
+				led_set(YELLOW + 5 + 5, LED_ON);
+			else if (str[0] == 'g')
+				led_set(GREEN + 5 + 5, LED_ON);
+			else if (str[0] == 'b')
+				led_set( BLUE + 5 + 5, LED_ON);
+		}
+		// Check if adding or subtracting duty cycle.
+		else if ((str[0] == 'a' || str[0] == 's') && str[1] == '\0') {
+			// If adding or subtracting.
+			if (str[0] == 'a')
+				dutyCycle += 0.25;
+			else
+				dutyCycle -= 0.25;
+
+			// Check bounds.
+			if (dutyCycle < SERVO_MIN)
+				dutyCycle = SERVO_MIN;
+			else if (dutyCycle > SERVO_MAX)
+				dutyCycle = SERVO_MAX;
+
+			// Print out duty cycle.
+			printf("[%lf]\n", dutyCycle);
+
+			// CHange duty cycle.
+			servo_set(dutyCycle);
+		}
+		// Check if low or high.
+		else if (strcmp("low", str) == 0) {
+			// Set servo to min.
+			servo_set(SERVO_MIN);
+
+			dutyCycle = SERVO_MIN;
+		}
+		else if (strcmp("high", str) == 0) {
+			// Set servo to min.
+			servo_set(SERVO_MAX);
+
+			dutyCycle = SERVO_MAX;
+		}
+		
+	} while (str[0] != 'q' || str[1] != '\0');
+
+	// Stop the timer.
+	ttc_stop();
+
+	// Close the interrupts on switches and buttons.
+	io_btn_close();
+	io_sw_close();
+
+	// Close down the timer.
+	ttc_close();
+
+	// Close the gic.
+	gic_close();
+
+	// Turn off LED 4 and all other LEDs.
+	led_set(4, LED_OFF);
+	led_set(ALL, LED_OFF);
+*/
+	
+	return 0;
+}
+
+
+
