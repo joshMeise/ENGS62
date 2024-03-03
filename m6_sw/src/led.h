@@ -16,10 +16,10 @@
 #define LED_OFF false
 
 /* led colors */
-#define RED 0
-#define BLUE 1
-#define GREEN 2
-#define YELLOW 3
+#define RED 5
+#define BLUE 6
+#define GREEN 7
+#define YELLOW 8
 
 #define ALL 0xFFFFFFFF		/* A value designating ALL leds */
 

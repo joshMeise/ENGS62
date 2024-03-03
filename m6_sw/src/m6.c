@@ -1,44 +1,52 @@
 /*
- * Josh Meise, ENGS 62, Module 1 Step 8
+ * Josh Meise, ENGS 62, Module 6
  *
- * This uses modified code provided by Professor Taylor.
+ * fsm.c :
+ * This program implements a finite state machie simulating a railway station.
  *
- * blinky.c -- toggles LED when 0 is enteRED + 5 by user.
+ * 4 statess: - Traffic: cars can cross over railway; green light.
+ *            - Train: train is crossing; red light and gate closed.
+ *            - Maintenance: technician is allowing train to undergo maintenance; blu light flash; gate closed and then under manual control.
+ *            - Pedestrian: pedestrians can cross road; all LEDS on and red light.
  *
- * Assumes the LED's are connected to AXI_GPIO_0, on channel 1
+ * 2 transition states: - Transition into: gate opens, wtis for pedestrians to cross; light goes from red to yellow to green.
+ *                      - Transition out of: light goes from green to yellow to red; gate closes.
  *
- * Terminal Settings:
- *  -Baud: 115200
- *  -Data bits: 8
- *  -Parity: no
- *  -Stop bits: 1
+ * Transitions between states: - Button 0 or 1 send into pedestrian state.
+ *                             - Switch 0 indicates maintenance entry/exit.
+ *                             - Switch 1 indicates train arriving/departing.
+ *                             - 0/1 on UART0 indcate train arriving/passing respectively.
+ *                             - 2/3 on UART0 indicate maintenance entry/exit respectively.
+ *
  */
 
 // Library inclusions.
 #include <stdio.h>
-#include "xil_types.h"
-#include "platform.h"
-#include <xgpio.h>
-#include "xparameters.h"
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <stdbool.h>
+#include "xgpio.h"
+#include "xil_types.h"
+#include "platform.h"
+#include "xparameters.h"
 #include "led.h"
 #include "io.h"
 #include "servo.h"
 #include "gic.h"
 #include "adc.h"
 #include "ttc.h"
-#include <unistd.h>
-#include <stdbool.h>
 
+// Predefined constants.
 #define SERVO_MIN 2.5
 #define SERVO_MAX 11
 #define PING 1
 #define UPDATE 2
 #define ID 17
 
+// Various states.
 typedef enum {
-	MAINTENANCE, TRAIN, PEDESTRIAN, TRAFFIC, TRANSITION
+	MAINTENANCE, TRAIN, PEDESTRIAN, TRAFFIC, TRANSITIONINTO, TRANSITIONOUT
 } state_t;
 
 // Structure definition for update message.
@@ -77,40 +85,47 @@ void interruptHandler(void *devP) {
 	// Variable declarations and coercion.
 	XUartPs *dev = (XUartPs *)devP;
 
+	// Invoke interrupt handler.
 	XUartPs_InterruptHandler(dev);
 
 }
 
 /*
- * This function handles button pushes appropriately.
- * Inputs: button that was pushed.
- * Outputs: none.
+ * This function handles interrupts from button pushes appropriately.
+ * Inputs: Button that was pushed.
+ * Outputs: None.
  */
 void btn_callback(u32 btn) {
-	// Switch modes based on which button is pressed.
+	// Pedestrian mode can only be entered from traffic - pedestrians can cross freely during other modes.
 	if (btn == 0 && state == TRAFFIC) {
 		state = PEDESTRIAN;
 		tlCtr = 0;
-	} else if (btn == 1 && state == TRAFFIC) {
+	}
+	else if (btn == 1 && state == TRAFFIC) {
 		state = PEDESTRIAN;
 		tlCtr = 0;
-	} else if (btn == 3) {
-		done = true;
 	}
+	else if (btn == 3)
+		done = true;
 
 }
 
 /*
- * This function handles button pushes appropriately.
- * Inputs: button that was pushed.
- * Outputs: none.
+ * This function handles interrupts from switch movements appropriately.
+ * Inputs: Switch that was toggled that was pushed.
+ * Outputs: None.
  */
 void swt_callback(u32 swt) {
-	// Switch modes based on which button is pressed.
+	// Enter maintenance mode from any mode 
 	if (swt == 0 && state != MAINTENANCE) {
 		printf("Entering maintenance mode.\n");
-		state = MAINTENANCE;
-		tlCtr = 0;
+		if (state == TRAFFIC) {
+			state = TRANSITIONINTO;
+			tlCtr = 0;
+		}
+		else {
+			state = MAINTENANCE;
+		}
 	}
 	else if (swt == 0 && state == MAINTENANCE) {
 		printf("Exiting maintenance mode.\n");

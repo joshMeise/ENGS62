@@ -127,6 +127,13 @@ void led_set(u32 led, bool tostate) {
 			XGpio_DiscreteWrite(&rgbPort, CHANNEL1, 0b000);
 			XGpio_DiscreteWrite(&port, CHANNEL1, 0b0000);
 		}
+		// If turning all on.
+		else if (led == ALL && tostate == LEF_ON) {
+			// Turn on all LEDs.
+			XGpio_DiscreteWrite(&port, CHANNEL1, XGpio_DiscreteRead(&port, CHANNEL1) | power(2, 0));
+			XGpio_DiscreteWrite(&port, CHANNEL1, XGpio_DiscreteRead(&port, CHANNEL1) | power(2, 1));
+			XGpio_DiscreteWrite(&port, CHANNEL1, XGpio_DiscreteRead(&port, CHANNEL1) | power(2, 2));
+			XGpio_DiscreteWrite(&port, CHANNEL1, XGpio_DiscreteRead(&port, CHANNEL1) | power(2, 3));
 	}
 }
 
